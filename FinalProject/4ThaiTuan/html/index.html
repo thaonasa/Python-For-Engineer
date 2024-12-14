@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Air Quality Map</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/unorm@1.6.0/lib/unorm.min.js"></script>
+    <style>
+      #map {
+        height: 900px;
+      }
+      .legend {
+        background-color: white;
+        padding: 10px;
+        line-height: 18px;
+        color: #555;
+      }
+      .legend i {
+        width: 18px;
+        height: 18px;
+        float: left;
+        margin-right: 8px;
+        opacity: 0.7;
+      }
+    </style>
+  </head>
+  <body>
+    <div style="margin: 10px">
+      <label for="date-picker">Date:</label>
+      <input type="date" id="date-picker" />
+      <label for="time-picker">Time:</label>
+      <input type="time" id="time-picker" step="3600" />
+    </div>
+    <div id="map"></div>
+
+    <script>
+      const today = new Date().toISOString().split("T")[0];
+      document.getElementById("date-picker").value = today;
+
+      const currentHour = new Date().toTimeString().split(":")[0] + ":00";
+      document.getElementById("time-picker").value = currentHour;
+
+      var map = L.map("map").setView([16.047079, 108.20623], 6);
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution:
+          "© OpenStreetMap contributors. Data updated from 5:00 PM June 30, 2024 to 2:00 PM September 22, 2024.",
+      }).addTo(map);
+
+      function getColor(aqi) {
+        return aqi > 300
+          ? "#7e0023"
+          : aqi > 200
+          ? "#99004c"
+          : aqi > 150
+          ? "#ff0000"
+          : aqi > 100
+          ? "#ff7e00"
+          : aqi > 50
+          ? "#ffff00"
+          : "#00e400";
+      }
+
+      function normalizeName(name) {
+        return unorm
+          .nfkd(name)
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase()
+          .replace(/\s+/g, " ")
+          .replace(/\./g, "")
+          .trim();
+      }
+
+      const cityAliasMap = {
+        "ho chi minh city": "tp ho chi minh",
+        "tp ho chi minh": "ho chi minh city",
+        hue: "thua thien - hue",
+        "thua thien - hue": "hue",
+        "khanh hoa": "nha trang",
+        "nha trang": "khanh hoa",
+      };
+
+      function addIslandLabels() {
+        L.marker([16.5, 111.5], { opacity: 0 })
+          .bindTooltip("Quần đảo Hoàng Sa<br>(Đà Nẵng, Việt Nam)", {
+            permanent: true,
+            direction: "center",
+            className: "my-label",
+          })
+          .addTo(map);
+
+        L.marker([10.75, 114.0], { opacity: 0 })
+          .bindTooltip("Quần đảo Trường Sa<br>(Khánh Hòa, Việt Nam)", {
+            permanent: true,
+            direction: "center",
+            className: "my-label",
+          })
+          .addTo(map);
+      }
+
+      function updateMapByDate(
+        geoData,
+        airQualityData,
+        selectedDate,
+        selectedTime
+      ) {
+        const selectedDateTime = `${selectedDate} ${selectedTime}`;
+        L.geoJSON(geoData, {
+          style: function (feature) {
+            const cityName = normalizeName(feature.properties.Name);
+            let cityData = airQualityData.find((city) => {
+              let normalizedCityName = normalizeName(city.name);
+              if (cityAliasMap[normalizedCityName]) {
+                normalizedCityName = cityAliasMap[normalizedCityName];
+              }
+              return normalizedCityName === cityName;
+            });
+
+            if (cityData) {
+              const dataForDate = cityData.data.find((entry) =>
+                entry.timestamp.startsWith(selectedDateTime)
+              );
+              if (dataForDate) {
+                const color = getColor(dataForDate.aqi);
+                return {
+                  fillColor: color,
+                  weight: 1,
+                  opacity: 1,
+                  color: "#666",
+                  fillOpacity: 0.7,
+                };
+              }
+            }
+            return {
+              fillColor: "#cccccc",
+              weight: 1,
+              color: "#666",
+              fillOpacity: 0.3,
+            };
+          },
+          onEachFeature: function (feature, layer) {
+            const cityName = feature.properties.Name;
+            let normalizedCityName = normalizeName(cityName);
+            if (cityAliasMap[normalizedCityName]) {
+              normalizedCityName = cityAliasMap[normalizedCityName];
+            }
+            let cityData = airQualityData.find(
+              (city) =>
+                normalizeName(city.name) === normalizeName(normalizedCityName)
+            );
+
+            if (cityData) {
+              const dataForDate = cityData.data.find((entry) =>
+                entry.timestamp.startsWith(selectedDateTime)
+              );
+              if (dataForDate) {
+                layer.bindPopup(
+                  `<b>${cityName}</b><br>AQI: ${dataForDate.aqi}<br>PM2.5: ${dataForDate.pm2_5} µg/m³<br>PM10: ${dataForDate.pm10} µg/m³<br>CO: ${dataForDate.co} µg/m³<br>O3: ${dataForDate.o3} µg/m³<br>NO2: ${dataForDate.no2} µg/m³<br>SO2: ${dataForDate.so2} µg/m³<br>NH3: ${dataForDate.nh3} µg/m³<br>Recommend: ${dataForDate.recommendation}`
+                );
+              }
+            }
+          },
+        }).addTo(map);
+
+        addIslandLabels();
+      }
+
+      fetch("air_quality_output_minified.json")
+        .then((response) => response.json())
+        .then((airQualityData) => {
+          const selectedDate = document.getElementById("date-picker").value;
+          const selectedTime = document.getElementById("time-picker").value;
+
+          fetch("diaphantinhenglish.geojson")
+            .then((response) => response.json())
+            .then((geoData) => {
+              updateMapByDate(
+                geoData,
+                airQualityData,
+                selectedDate,
+                selectedTime
+              );
+
+              document
+                .getElementById("date-picker")
+                .addEventListener("change", function () {
+                  map.eachLayer(function (layer) {
+                    if (!!layer.toGeoJSON) {
+                      map.removeLayer(layer);
+                    }
+                  });
+
+                  const newDate = this.value;
+                  const newTime = document.getElementById("time-picker").value;
+
+                  fetch("diaphantinhenglish.geojson")
+                    .then((response) => response.json())
+                    .then((geoData) => {
+                      updateMapByDate(
+                        geoData,
+                        airQualityData,
+                        newDate,
+                        newTime
+                      );
+                    });
+                });
+              document
+                .getElementById("time-picker")
+                .addEventListener("change", function () {
+                  map.eachLayer(function (layer) {
+                    if (!!layer.toGeoJSON) {
+                      map.removeLayer(layer);
+                    }
+                  });
+
+                  const newTime = this.value;
+                  const newDate = document.getElementById("date-picker").value;
+
+                  fetch("diaphantinhenglish.geojson")
+                    .then((response) => response.json())
+                    .then((geoData) => {
+                      updateMapByDate(
+                        geoData,
+                        airQualityData,
+                        newDate,
+                        newTime
+                      );
+                    });
+                });
+            });
+        });
+
+      var legend = L.control({ position: "bottomright" });
+
+      legend.onAdd = function (map) {
+        var div = L.DomUtil.create("div", "legend"),
+          grades = [0, 50, 100, 150, 200, 300],
+          labels = [
+            "Good",
+            "Moderate",
+            "Unhealthy for Sensitive Groups",
+            "Unhealthy",
+            "Very Unhealthy",
+            "Hazardous",
+          ];
+
+        for (var i = 0; i < grades.length; i++) {
+          div.innerHTML +=
+            '<i style="background:' +
+            getColor(grades[i] + 1) +
+            '"></i> ' +
+            grades[i] +
+            (grades[i + 1] ? "&ndash;" + grades[i + 1] + "<span>" : "+") +
+            " " +
+            labels[i] +
+            "<span><br>";
+        }
+
+        return div;
+      };
+
+      legend.addTo(map);
+
+      addIslandLabels();
+    </script>
+  </body>
+</html>

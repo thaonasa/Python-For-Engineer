@@ -1,0 +1,4 @@
+Đặt file "GenerateDataForMap.py" cùng cấp với database hoặc thay đổi giá trị đường dẫn, tên database thông qua biến "db_path" trong file python
+Chạy file "GenerateDataForMap.py" ra được file "air_quality_output_minified.json" trong thư mục "html", nếu file tạo ra không nằm trong thư mục "html" thì di chuyển vào trong thư mục để có thể hiển thị được trên bản đồ.
+Vui lòng không đổi tên file json xuất ra để đảm bảo không xuất hiện lỗi hiển thị bản đồ.
+Nếu không chạy được "GenerateDataForMap.py" có thể bỏ đổi tên file "air_quality_output_minified_backup.json" thành "air_quality_output_minified.json" để sử dụng.
